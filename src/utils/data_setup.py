@@ -1,8 +1,8 @@
-import pandas as pd
+import pandas as pd # type: ignore
 import helpers 
 
 
-config = helpers.load_config("configs/candidate_config.yaml")
+config = helpers.load_config("../../configs/candidate_config.yaml")
 
 
 # User data
