@@ -2,6 +2,7 @@ import pandas as pd
 from transformers import pipeline
 from tqdm import tqdm
 from typing import List, Optional
+import torch
 
 class EmotionDetector:
     def __init__(self, model_name: str = "bhadresh-savani/distilbert-base-uncased-emotion", 
