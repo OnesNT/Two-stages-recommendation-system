@@ -3,6 +3,8 @@ import os
 import pickle
 import pandas as pd
 from scipy.sparse import csr_matrix
+from tqdm import tqdm
+import time
 
 # Add the src directory to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
@@ -20,6 +22,8 @@ class RecommenderCommands:
         """
         Train a model from a preprocessed sparse matrix (.pkl) file.
         """
+        start_time = time.time()
+        print("\n🚀 Starting model training process...")
 
         if model_type not in self.models:
             raise ValueError(f"Unsupported model type: {model_type}")
@@ -28,7 +32,7 @@ class RecommenderCommands:
             raise FileNotFoundError(f"Matrix file not found at {matrix_path}")
 
         # ✅ Load preprocessed sparse matrix
-        print(f"📥 Loading sparse matrix from {matrix_path}...")
+        print(f"\n📥 Loading sparse matrix from {matrix_path}...")
         with open(matrix_path, 'rb') as f:
             data = pickle.load(f)
 
@@ -36,18 +40,28 @@ class RecommenderCommands:
         user_encoder = data['user_encoder']
         item_encoder = data['item_encoder']
 
-        print(f"✅ Matrix shape: {user_item_matrix.shape}")
-        print(f"🧑 Users: {len(user_encoder.classes_)}, 📚 Items: {len(item_encoder.classes_)}")
+        print(f"✅ Matrix loaded successfully:")
+        print(f"   - Shape: {user_item_matrix.shape}")
+        print(f"   - Users: {len(user_encoder.classes_)}")
+        print(f"   - Items: {len(item_encoder.classes_)}")
+        print(f"   - Non-zero elements: {user_item_matrix.nnz}")
+        print(f"   - Sparsity: {(user_item_matrix.nnz / (user_item_matrix.shape[0] * user_item_matrix.shape[1])) * 100:.8f}%")
 
         # ✅ Train model
         try:
+            print(f"\n🤖 Initializing {model_type} model...")
             model = self.models[model_type]()
+            
+            print("\n⚙️ Starting model training...")
             model.fit(user_item_matrix)
-            print("🤖 Model training completed.")
+            
+            training_time = time.time() - start_time
+            print(f"\n✅ Model training completed in {training_time:.2f} seconds")
         except Exception as e:
             raise RuntimeError(f"Model training failed: {str(e)}")
 
         # ✅ Save model
+        print("\n💾 Saving model...")
         os.makedirs("models", exist_ok=True)
         model_path = os.path.join("models", f"{model_type}_model.pkl")
         model_bundle = {
@@ -59,7 +73,7 @@ class RecommenderCommands:
         try:
             with open(model_path, 'wb') as f:
                 pickle.dump(model_bundle, f)
-            print(f"✅ Model saved to {model_path}")
+            print(f"✅ Model saved successfully to {model_path}")
             return model_path
         except Exception as e:
             raise IOError(f"Failed to save model: {str(e)}")

@@ -45,7 +45,9 @@ python src/preprocessing/preprocess.py
 
 2. Train the model:
 ```bash
-python main.py --mode train
+python main.py train `
+     --model_type itemcf `
+     --matrix_path "C:\Users\Admin\Documents\GitHub\Two-stages-recommendation-system\datasets\processed\user_item_sparse_matrix.pkl"
 ```
 
 3. Make recommendations:
