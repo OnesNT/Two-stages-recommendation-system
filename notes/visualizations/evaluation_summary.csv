@@ -1,0 +1,6 @@
+Model,Stage,hit_rate@10,mrr@10,ndcg@10,map@10,Time (s),Memory (MB),Diversity,Novelty,Coverage
+Factorization,Retrieval,18.7385,0.09,0.0815,0.071,45.3,1024.5,0.65,0.45,0.32
+content-based,Retrieval,28.4337,0.1496,0.1457,0.1305,47.1,1103.2,,,
+UserCF,Retrieval,28.6652,0.1561,0.1532,0.1375,46.8,1056.7,,,
+KNN,Retrieval,29.0108,0.1605,0.1569,0.1407,50.5,1158.9,,,
+hybrid,Retrieval,29.0108,0.1605,0.1569,0.1407,52.3,1170.8,,,

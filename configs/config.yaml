@@ -1,5 +1,0 @@
-num_users: 1000
-num_items: 5000
-embedding_dim: 50
-ranking_input_dim: 10
-top_k: 20

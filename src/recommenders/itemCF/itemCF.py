@@ -1,99 +1,69 @@
+import torch
+from scipy.sparse import csr_matrix, lil_matrix
+from tqdm import tqdm
 import numpy as np
-import pandas as pd
-from scipy.sparse import csr_matrix
+import time
 
 class ItemCF:
-    def __init__(self):
-        """
-        Initialize the ItemCF model.
-        """
-        self.item_weights = None
-        self.item_similarity = None
+    def __init__(self, top_k=100, device='cuda' if torch.cuda.is_available() else 'cpu'):
+        self.device = device
+        self.top_k = top_k
+        self.similarity_matrix = None
+        self.user_item_matrix = None
+        self.num_users = 0
+        self.num_items = 0
+        print(f"🚀 Using device: {self.device}")
 
-    def fit(self, user_item_matrix):
-        """
-        Fit the model to the user-item matrix.
-        
-        Parameters:
-        user_item_matrix (numpy.ndarray or scipy.sparse.csr_matrix): A matrix where rows represent users and columns represent items.
-                                                                    The values represent the interaction strength (e.g., ratings, clicks).
-        """
-        if isinstance(user_item_matrix, np.ndarray):
-            user_item_matrix = csr_matrix(user_item_matrix)
-        
+    def _compute_item_norms(self, matrix):
+        """Compute L2 norm for each item (column) in sparse matrix"""
+        return np.sqrt(matrix.power(2).sum(axis=0)).A1 + 1e-8  # avoid division by zero
+
+    def fit(self, user_item_matrix: csr_matrix):
+        start_time = time.time()
         self.num_users, self.num_items = user_item_matrix.shape
-        
-        # Compute item weights w_i
-        self.item_weights = self._compute_item_weights(user_item_matrix)
-        
-        # Compute item-item similarity matrix
-        self.item_similarity = self._compute_item_similarity(user_item_matrix)
+        print(f"\n📊 Training ItemCF model:")
+        print(f"   - Users: {self.num_users}")
+        print(f"   - Items: {self.num_items}")
+        print(f"   - Density: {(user_item_matrix.nnz / (self.num_users * self.num_items)) * 100:.6f}%")
 
-    def _compute_item_weights(self, user_item_matrix):
-        """
-        Compute the weight w_i for each item.
-        
-        Parameters:
-        user_item_matrix (scipy.sparse.csr_matrix): The user-item interaction matrix.
-        
-        Returns:
-        numpy.ndarray: A vector of item weights.
-        """
-        # Number of users who interacted with each item
-        item_interaction_counts = np.array(user_item_matrix.astype(bool).sum(axis=0)).flatten()
-        
-        # Compute w_i = sum_{u in U_i} 1 / |I_u|
-        item_weights = np.zeros(self.num_items)
-        for u in range(self.num_users):
-            user_interactions = user_item_matrix[u].nonzero()[1]  # Items interacted with by user u
-            num_interactions = len(user_interactions)
-            if num_interactions > 0:
-                item_weights[user_interactions] += 1 / num_interactions
-        
-        return item_weights
+        self.user_item_matrix = user_item_matrix
+        item_norms = self._compute_item_norms(user_item_matrix)
 
-    def _compute_item_similarity(self, user_item_matrix):
-        """
-        Compute the item-item similarity matrix.
-        
-        Parameters:
-        user_item_matrix (scipy.sparse.csr_matrix): The user-item interaction matrix.
-        
-        Returns:
-        numpy.ndarray: A matrix of item-item similarity scores.
-        """
-        # Initialize the similarity matrix
-        item_similarity = np.zeros((self.num_items, self.num_items))
-        
-        # Compute co-occurrence and similarity scores
-        for u in range(self.num_users):
-            user_interactions = user_item_matrix[u].nonzero()[1]  # Items interacted with by user u
-            num_interactions = len(user_interactions)
-            
-            if num_interactions > 0:
-                # Update similarity scores for all pairs of items interacted with by user u
-                for i in user_interactions:
-                    for j in user_interactions:
-                        if i != j:
-                            item_similarity[i, j] += 1 / (num_interactions * np.sqrt(self.item_weights[i] * self.item_weights[j]))
-        
-        return item_similarity
+        # Initialize top-K sparse similarity matrix
+        similarity = lil_matrix((self.num_items, self.num_items))
 
-    def recommend(self, item_id, top_n=10):
+        print("\n⚙️ Computing item-item similarity (sparse top-K)...")
+        for i in tqdm(range(self.num_items), desc="Items"):
+            item_vec = user_item_matrix[:, i].toarray().flatten()
+            dot_product = user_item_matrix.T.dot(item_vec).flatten()
+            similarities = dot_product / (item_norms[i] * item_norms)
+
+            # Remove self-similarity
+            similarities[i] = -np.inf
+
+            # Get top-K indices
+            top_k_indices = np.argpartition(-similarities, self.top_k)[:self.top_k]
+            top_k_sorted = top_k_indices[np.argsort(-similarities[top_k_indices])]
+
+            for j in top_k_sorted:
+                similarity[i, j] = similarities[j]
+
+        # Convert to CSR for efficient indexing
+        self.similarity_matrix = similarity.tocsr()
+
+        duration = time.time() - start_time
+        print(f"\n✅ Training finished in {duration:.2f} seconds")
+        print(f"   - Sparse matrix size: {self.similarity_matrix.shape}")
+        print(f"   - Non-zero similarities: {self.similarity_matrix.nnz}")
+
+    def recommend(self, item_id: int, top_n=10):
         """
-        Recommend top N related items for a given item.
-        
-        Parameters:
-        item_id (int): The ID of the item for which to generate recommendations.
-        top_n (int): The number of top items to recommend.
-        
-        Returns:
-        list: A list of recommended item IDs.
+        Recommend top-N items similar to the given item ID.
         """
-        # Get the similarity scores for the item
-        item_sim_scores = self.item_similarity[item_id]
-        
-        # Sort and get the top N items (excluding the item itself)
-        recommended_items = np.argsort(item_sim_scores)[-top_n-1:-1][::-1]
-        
-        return recommended_items
+        if self.similarity_matrix is None:
+            raise ValueError("Model not trained. Call `fit()` first.")
+        # print(f"🔍 Recommendation for item {item_id}")
+        # print(f"🔍 Similarity matrix shape: {self.similarity_matrix.shape}")
+        sim_scores = self.similarity_matrix[item_id].toarray().flatten()
+        top_n_indices = np.argsort(-sim_scores)[:top_n]
+        return top_n_indices.tolist()
